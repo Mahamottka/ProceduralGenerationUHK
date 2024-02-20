@@ -1,25 +1,21 @@
 package model;
 
-import noises.PerlinNoise;
+import chunks.Chunk;
+import chunks.ChunkManager;
+import lwjglutils.OGLTextRenderer;
+import lwjglutils.ShaderUtils;
+import lwjglutils.ToFloatArray;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.glfw.*;
 import org.lwjgl.opengl.*;
-import org.lwjgl.system.*;
-
-import lwjglutils.ShaderUtils;
-import lwjglutils.ToFloatArray;
+import org.lwjgl.system.MemoryStack;
 import transforms.Camera;
 import transforms.Mat4;
 import transforms.Mat4PerspRH;
 import transforms.Vec3D;
-import lwjglutils.OGLBuffers;
-import lwjglutils.OGLTextRenderer;
-import lwjglutils.OGLUtils;
-import utils.FastNoiseLite;
 
 import java.nio.DoubleBuffer;
 import java.nio.IntBuffer;
-import java.util.Random;
 
 import static org.lwjgl.glfw.Callbacks.*;
 import static org.lwjgl.glfw.GLFW.*;
@@ -29,18 +25,17 @@ import static org.lwjgl.system.MemoryStack.*;
 import static org.lwjgl.system.MemoryUtil.*;
 
 public class Renderer {
-    int width = 300, height = 300;
+    int terrainSize = 126;
+    float terrainScale = 5f;
+    int width = 800, height = 600;
     double ox, oy;
     private boolean mouseButton1 = false;
     private long window;
-    OGLBuffers buffers;
+    private ChunkManager chunkManager;
     OGLTextRenderer textRenderer;
     int shaderProgram, locMat;
-    boolean depthTest = true, cCW = true, renderFront = false, renderBack = false;
     Camera cam = new Camera();
     Mat4 proj = new Mat4PerspRH(Math.PI / 4, 1, 0.01, 1000.0);
-    private final int terrainSize = 128;
-    private final float terrainScale = 5f;
 
     private void init() {
         GLFWErrorCallback.createPrint(System.err).set();
@@ -58,7 +53,7 @@ public class Renderer {
             if (action == GLFW_PRESS || action == GLFW_REPEAT) {
                 switch (key) {
                     case GLFW_KEY_W:
-                        cam = cam.forward(1);
+                        cam = cam.forward(3);
                         break;
                     case GLFW_KEY_D:
                         cam = cam.right(1);
@@ -74,9 +69,6 @@ public class Renderer {
                         break;
                     case GLFW_KEY_LEFT_SHIFT:
                         cam = cam.up(1);
-                        break;
-                    case GLFW_KEY_P:
-                        renderFront = !renderFront;
                         break;
                 }
             }
@@ -146,93 +138,58 @@ public class Renderer {
         glfwSwapInterval(1);
         glfwShowWindow(window);
         GL.createCapabilities();
-        OGLUtils.printOGLparameters();
         glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
-        createTerrain();
+
+        // Initialize shader program, text renderer, and chunk manager
         shaderProgram = ShaderUtils.loadProgram("/shader");
-        glUseProgram(this.shaderProgram);
+        glUseProgram(shaderProgram);
         locMat = glGetUniformLocation(shaderProgram, "mat");
-        cam = cam.withPosition(new Vec3D(5, 5, 2.5)).withAzimuth(Math.PI * 1.25).withZenith(Math.PI * -0.125);
-        glDisable(GL_CULL_FACE);
+        cam = cam.withPosition(new Vec3D(5, 5, 50)).withAzimuth(Math.PI * -2).withZenith(Math.PI * -0.125);
         textRenderer = new OGLTextRenderer(width, height);
+        chunkManager = new ChunkManager(terrainSize, terrainScale);
     }
-
-    void createTerrain() {
-        PerlinNoise perlinNoise = new PerlinNoise(terrainSize, terrainSize, terrainScale);
-        float[][] noiseData = perlinNoise.getNoiseData();
-
-        float[] vertices = new float[terrainSize * terrainSize * 3];
-        int[] indices = new int[(terrainSize - 1) * (terrainSize - 1) * 6];
-
-        float heightMultiplier = 20.0f; // Adjust this value to increase/decrease terrain height
-
-        for (int z = 0; z < terrainSize; z++) {
-            for (int x = 0; x < terrainSize; x++) {
-                vertices[3 * (z * terrainSize + x)] = x;
-                vertices[3 * (z * terrainSize + x) + 1] = z;
-                // Apply the noise data with a height multiplier
-                vertices[3 * (z * terrainSize + x) + 2] = noiseData[x][z] * heightMultiplier;
-            }
-        }
-
-        int index = 0;
-        for (int z = 0; z < terrainSize - 1; z++) {
-            for (int x = 0; x < terrainSize - 1; x++) {
-                indices[index++] = z * terrainSize + x;
-                indices[index++] = z * terrainSize + x + 1;
-                indices[index++] = (z + 1) * terrainSize + x;
-                indices[index++] = (z + 1) * terrainSize + x;
-                indices[index++] = z * terrainSize + x + 1;
-                indices[index++] = (z + 1) * terrainSize + x + 1;
-            }
-        }
-
-        OGLBuffers.Attrib[] attributes = {
-                new OGLBuffers.Attrib("inPosition", 3)
-        };
-
-        buffers = new OGLBuffers(vertices, attributes, indices);
-    }
-
-
 
     private void loop() {
-        // Run the rendering loop until the user has attempted to close
-        // the window or has pressed the ESCAPE key.
-        while ( !glfwWindowShouldClose(window) ) {
+        while (!glfwWindowShouldClose(window)) {
+            glViewport(0, 0, width, height);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-            String text = new String(this.getClass().getName() + ": [LMB] camera, WSAD");
+            // Update camera matrices
+            glUniformMatrix4fv(locMat, false, ToFloatArray.convert(cam.getViewMatrix().mul(proj)));
 
-            if (!renderFront) {
-                glPolygonMode(GL_FRONT, GL_FILL);
-                text += ", front [p]olygons: fill";
-            } else {
-                glPolygonMode(GL_FRONT, GL_LINE);
-                text += ", front [p]olygons: line";
+            // Adjust camera position to ensure the terrain is rendered horizontally
+            int centerX = (int) cam.getPosition().getX();
+            int centerZ = (int) cam.getPosition().getZ();
+            int offsetX = centerX % terrainSize;
+            int offsetZ = centerZ % terrainSize;
+            int chunkX = centerX / terrainSize;
+            int chunkZ = centerZ / terrainSize;
+
+            // Generate and render chunks
+            for (int dz = -1; dz <= 1; dz++) {
+                for (int dx = -1; dx <= 1; dx++) {
+                    int newChunkX = chunkX + dx;
+                    int newChunkZ = chunkZ + dz;
+                    chunkManager.generateChunk(newChunkX, newChunkZ);
+                    Chunk chunk = chunkManager.getChunk(newChunkX, newChunkZ);
+                    if (chunk != null) {
+                        // Render both front and back faces
+                        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+                        chunk.getBuffers().draw(GL_TRIANGLES, shaderProgram);
+                    }
+                }
             }
 
 
-            glViewport(0, 0, width, height);
 
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); // clear the framebuffer
 
-            // set the current shader to be used
-            glUseProgram(shaderProgram);
 
-            glUniformMatrix4fv(locMat, false,
-                    ToFloatArray.convert(cam.getViewMatrix().mul(proj)));
-
-            // bind and draw
-            buffers.draw(GL_TRIANGLES, shaderProgram);
-
+            // Render text
             textRenderer.clear();
-            textRenderer.addStr2D(3, 20, text);
+            textRenderer.addStr2D(3, 20, "Renderer: [LMB] camera, WSAD");
             textRenderer.draw();
 
-            glfwSwapBuffers(window); // swap the color buffers
-
-            // Poll for window events. The key callback above will only be
-            // invoked during this call.
+            glfwSwapBuffers(window);
             glfwPollEvents();
         }
     }
@@ -240,22 +197,15 @@ public class Renderer {
     public void run() {
         try {
             init();
-
             loop();
-
-            // Free the window callbacks and destroy the window
-            glfwFreeCallbacks(window);
-            glfwDestroyWindow(window);
-
         } catch (Throwable t) {
             t.printStackTrace();
         } finally {
-            // Terminate GLFW and free the error callback
+            glfwFreeCallbacks(window);
+            glfwDestroyWindow(window);
             glDeleteProgram(shaderProgram);
             glfwTerminate();
             glfwSetErrorCallback(null).free();
         }
-
     }
-
 }
