@@ -66,10 +66,10 @@ public class Renderer {
                         cam = cam.left(5);
                         break;
                     case GLFW_KEY_LEFT_CONTROL:
-                        cam = cam.down(1);
+                        cam = cam.down(5);
                         break;
                     case GLFW_KEY_LEFT_SHIFT:
-                        cam = cam.up(1);
+                        cam = cam.up(5);
                         break;
                     case GLFW_KEY_P:
                         if (action == GLFW_PRESS) { // Only toggle on key press, not repeat
