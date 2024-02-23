@@ -53,16 +53,16 @@ public class Renderer {
             if (action == GLFW_PRESS || action == GLFW_REPEAT) {
                 switch (key) {
                     case GLFW_KEY_W:
-                        cam = cam.forward(3);
+                        cam = cam.forward(5);
                         break;
                     case GLFW_KEY_D:
-                        cam = cam.right(1);
+                        cam = cam.right(5);
                         break;
                     case GLFW_KEY_S:
-                        cam = cam.backward(1);
+                        cam = cam.backward(5);
                         break;
                     case GLFW_KEY_A:
-                        cam = cam.left(1);
+                        cam = cam.left(5);
                         break;
                     case GLFW_KEY_LEFT_CONTROL:
                         cam = cam.down(1);
@@ -157,42 +157,39 @@ public class Renderer {
             // Update camera matrices
             glUniformMatrix4fv(locMat, false, ToFloatArray.convert(cam.getViewMatrix().mul(proj)));
 
-            // Adjust camera position to ensure the terrain is rendered horizontally
-            int centerX = (int) cam.getPosition().getX();
-            int centerZ = (int) cam.getPosition().getZ();
-            int offsetX = centerX % terrainSize;
-            int offsetZ = centerZ % terrainSize;
-            int chunkX = centerX / terrainSize;
-            int chunkZ = centerZ / terrainSize;
+            // Adjust for the Z (altitude) and Y (depth) switch relative to the camera's position
+            // Assuming the camera's Y is now representing what was previously Z (depth/forward)
+            int currentCentralChunkX = (int) Math.floor(cam.getPosition().getX() / (terrainSize * terrainScale));
+            int currentCentralChunkY = (int) Math.floor(cam.getPosition().getY() / (terrainSize * terrainScale)); // Y used for depth
 
-            // Generate and render chunks
-            for (int dz = -1; dz <= 1; dz++) {
-                for (int dx = -1; dx <= 1; dx++) {
-                    int newChunkX = chunkX + dx;
-                    int newChunkZ = chunkZ + dz;
-                    chunkManager.generateChunk(newChunkX, newChunkZ);
-                    Chunk chunk = chunkManager.getChunk(newChunkX, newChunkZ);
+            // Generate and render the 7x7 grid around the current central chunk
+            for (int dy = -3; dy <= 3; dy++) {
+                for (int dx = -3; dx <= 3; dx++) {
+                    int chunkX = currentCentralChunkX + dx;
+                    int chunkY = currentCentralChunkY + dy; // Adjusted for Y
+                    chunkManager.generateChunk(chunkX, chunkY);
+                    Chunk chunk = chunkManager.getChunk(chunkX, chunkY);
                     if (chunk != null) {
-                        // Render both front and back faces
+                        // Render the chunk
                         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
                         chunk.getBuffers().draw(GL_TRIANGLES, shaderProgram);
                     }
                 }
             }
 
-
-
-
-
-            // Render text
+            // Render the camera's current position on the screen, reflecting the Y and Z switch
             textRenderer.clear();
-            textRenderer.addStr2D(3, 20, "Renderer: [LMB] camera, WSAD");
+            textRenderer.addStr2D(20, 20, String.format("Camera Position: X=%.2f, Y=%.2f", cam.getPosition().getX(), cam.getPosition().getY()));
+            //textRenderer.addStr2D(3, 40, "Renderer: [LMB] camera, WSAD");
             textRenderer.draw();
 
             glfwSwapBuffers(window);
             glfwPollEvents();
         }
     }
+
+
+
 
     public void run() {
         try {

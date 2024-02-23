@@ -4,84 +4,78 @@ import lwjglutils.OGLBuffers;
 import noises.PerlinNoise;
 
 public class Chunk {
-    private int chunkX;
-    private int chunkZ;
-    private int terrainSize;
-    private float terrainScale;
+    private int chunkX; // X-coordinate of the chunk
+    private int chunkY; // Y-coordinate of the chunk, adjusted for clarity
+    private final int terrainSize;
+    private final float terrainScale;
     private OGLBuffers buffers;
 
-    // Constructor
-    public Chunk(int chunkX, int chunkZ, int terrainSize, float terrainScale) {
+    public Chunk(int chunkX, int chunkY, int terrainSize, float terrainScale) {
         this.chunkX = chunkX;
-        this.chunkZ = chunkZ;
+        this.chunkY = chunkY;
         this.terrainSize = terrainSize;
         this.terrainScale = terrainScale;
+        createTerrain();
     }
 
-    // Method to create terrain
     public void createTerrain() {
-        // Calculate the world coordinates of the chunk's origin
-        float startX = chunkX * terrainSize;
-        float startZ = chunkZ * terrainSize;
+        // Adjusted for clarity with X and Y coordinates
+        float startX = chunkX * terrainSize * terrainScale;
+        float startY = chunkY * terrainSize * terrainScale; // Use startY for consistency
 
-        // Increase terrain size to reduce visible seams
         int extendedSize = terrainSize + 1;
         PerlinNoise perlinNoise = new PerlinNoise(extendedSize, extendedSize, terrainScale);
         float[][] noiseData = perlinNoise.getNoiseData();
 
         float[] vertices = new float[extendedSize * extendedSize * 3];
-        int[] indices = new int[extendedSize * extendedSize * 6];
+        int[] indices = new int[(extendedSize - 1) * (extendedSize - 1) * 6];
 
-        float heightMultiplier = 20.0f; // Adjust this value to increase/decrease terrain height
+        float heightMultiplier = 20.0f;
 
-        for (int z = 0; z < extendedSize; z++) {
+        for (int y = 0; y < extendedSize; y++) {
             for (int x = 0; x < extendedSize; x++) {
-                // Calculate the world coordinates for each vertex
-                float worldX = startX + x - 1;
-                float worldZ = startZ + z - 1;
-                // Apply the noise data with a height multiplier
-                vertices[3 * (z * extendedSize + x)] = worldX;
-                vertices[3 * (z * extendedSize + x) + 1] = worldZ;
-                vertices[3 * (z * extendedSize + x) + 2] = noiseData[x][z] * heightMultiplier;
+                float worldX = startX + x * terrainScale;
+                float worldZ = noiseData[x][y] * heightMultiplier; // Use as height
+                float worldY = startY + y * terrainScale; // Adjusted for depth
+
+                int vertexIndex = 3 * (y * extendedSize + x);
+                vertices[vertexIndex] = worldX;
+                vertices[vertexIndex + 1] = worldZ; // Height
+                vertices[vertexIndex + 2] = worldY; // Depth
             }
         }
 
         int index = 0;
-        for (int z = 0; z < extendedSize - 1; z++) {
+        for (int y = 0; y < extendedSize - 1; y++) {
             for (int x = 0; x < extendedSize - 1; x++) {
-                // Calculate the indices for the current quad
-                indices[index++] = z * extendedSize + x;
-                indices[index++] = z * extendedSize + x + 1;
-                indices[index++] = (z + 1) * extendedSize + x;
-                indices[index++] = (z + 1) * extendedSize + x;
-                indices[index++] = z * extendedSize + x + 1;
-                indices[index++] = (z + 1) * extendedSize + x + 1;
+                int baseIndex = y * extendedSize + x;
+                indices[index++] = baseIndex;
+                indices[index++] = baseIndex + 1;
+                indices[index++] = baseIndex + extendedSize;
+                indices[index++] = baseIndex + 1;
+                indices[index++] = baseIndex + 1 + extendedSize;
+                indices[index++] = baseIndex + extendedSize;
             }
         }
 
-        OGLBuffers.Attrib[] attributes = {
-                new OGLBuffers.Attrib("inPosition", 3)
-        };
-
+        OGLBuffers.Attrib[] attributes = { new OGLBuffers.Attrib("inPosition", 3) };
         buffers = new OGLBuffers(vertices, attributes, indices);
     }
 
-    // Accessor for OGLBuffers
-    public OGLBuffers getBuffers() {
-        return buffers;
-    }
-
-    // Accessors for chunk coordinates
+    // Accessors
     public int getChunkX() {
         return chunkX;
     }
 
-    public int getChunkZ() {
-        return chunkZ;
+    public int getChunkY() {
+        return chunkY;
     }
 
-    // Method to get a unique key for the chunk based on its coordinates
-    public static String getKey(int chunkX, int chunkZ) {
-        return chunkX + "_" + chunkZ;
+    public OGLBuffers getBuffers() {
+        return buffers;
+    }
+
+    public static String getKey(int chunkX, int chunkY) {
+        return chunkX + "_" + chunkY;
     }
 }
