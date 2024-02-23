@@ -13,11 +13,13 @@ public class ChunkManager {
         this.terrainScale = terrainScale;
     }
 
+    // Generate a chunk at the specified X (width) and Y (depth) coordinates
     public void generateChunk(int chunkX, int chunkY) {
         String key = Chunk.getKey(chunkX, chunkY);
         chunks.computeIfAbsent(key, k -> new Chunk(chunkX, chunkY, terrainSize, terrainScale));
     }
 
+    // Get the chunk at the specified X (width) and Y (depth) coordinates
     public Chunk getChunk(int chunkX, int chunkY) {
         return chunks.get(Chunk.getKey(chunkX, chunkY));
     }

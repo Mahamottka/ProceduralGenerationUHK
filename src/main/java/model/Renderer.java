@@ -26,7 +26,7 @@ import static org.lwjgl.system.MemoryUtil.*;
 
 public class Renderer {
     int terrainSize = 126;
-    float terrainScale = 5f;
+    float terrainScale = 20f;
     int width = 800, height = 600;
     double ox, oy;
     private boolean mouseButton1 = false;
@@ -144,7 +144,7 @@ public class Renderer {
         shaderProgram = ShaderUtils.loadProgram("/shader");
         glUseProgram(shaderProgram);
         locMat = glGetUniformLocation(shaderProgram, "mat");
-        cam = cam.withPosition(new Vec3D(5, 5, 50)).withAzimuth(Math.PI * -2).withZenith(Math.PI * -0.125);
+        cam = cam.withPosition(new Vec3D(0, 0, 50)).withAzimuth(0).withZenith(0);
         textRenderer = new OGLTextRenderer(width, height);
         chunkManager = new ChunkManager(terrainSize, terrainScale);
     }
@@ -157,16 +157,15 @@ public class Renderer {
             // Update camera matrices
             glUniformMatrix4fv(locMat, false, ToFloatArray.convert(cam.getViewMatrix().mul(proj)));
 
-            // Adjust for the Z (altitude) and Y (depth) switch relative to the camera's position
-            // Assuming the camera's Y is now representing what was previously Z (depth/forward)
+            // Calculate the current central chunk based on the camera's X and Y position
             int currentCentralChunkX = (int) Math.floor(cam.getPosition().getX() / (terrainSize * terrainScale));
-            int currentCentralChunkY = (int) Math.floor(cam.getPosition().getY() / (terrainSize * terrainScale)); // Y used for depth
+            int currentCentralChunkY = (int) Math.floor(cam.getPosition().getY() / (terrainSize * terrainScale));
 
-            // Generate and render the 7x7 grid around the current central chunk
+            // Generate and render the 7x7 grid around the current central chunk along X and Y axes
             for (int dy = -3; dy <= 3; dy++) {
                 for (int dx = -3; dx <= 3; dx++) {
                     int chunkX = currentCentralChunkX + dx;
-                    int chunkY = currentCentralChunkY + dy; // Adjusted for Y
+                    int chunkY = currentCentralChunkY + dy;
                     chunkManager.generateChunk(chunkX, chunkY);
                     Chunk chunk = chunkManager.getChunk(chunkX, chunkY);
                     if (chunk != null) {
@@ -177,16 +176,16 @@ public class Renderer {
                 }
             }
 
-            // Render the camera's current position on the screen, reflecting the Y and Z switch
+            // Render the camera's current position on the screen, using X and Y
             textRenderer.clear();
             textRenderer.addStr2D(20, 20, String.format("Camera Position: X=%.2f, Y=%.2f", cam.getPosition().getX(), cam.getPosition().getY()));
-            //textRenderer.addStr2D(3, 40, "Renderer: [LMB] camera, WSAD");
             textRenderer.draw();
 
             glfwSwapBuffers(window);
             glfwPollEvents();
         }
     }
+
 
 
 
