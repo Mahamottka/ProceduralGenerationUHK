@@ -28,6 +28,7 @@ public class Renderer {
     int terrainSize = 126;
     float terrainScale = 20f;
     int width = 800, height = 600;
+    private boolean wireframe = false;
     double ox, oy;
     private boolean mouseButton1 = false;
     private long window;
@@ -35,7 +36,7 @@ public class Renderer {
     OGLTextRenderer textRenderer;
     int shaderProgram, locMat;
     Camera cam = new Camera();
-    Mat4 proj = new Mat4PerspRH(Math.PI / 4, 1, 0.01, 1000.0);
+    Mat4 proj = new Mat4PerspRH(Math.PI / 4, 1, 0.01, 3000.0);
 
     private void init() {
         GLFWErrorCallback.createPrint(System.err).set();
@@ -70,6 +71,17 @@ public class Renderer {
                     case GLFW_KEY_LEFT_SHIFT:
                         cam = cam.up(1);
                         break;
+                    case GLFW_KEY_P:
+                        if (action == GLFW_PRESS) { // Only toggle on key press, not repeat
+                            wireframe = !wireframe; // Toggle the wireframe boolean
+                            if (wireframe) {
+                                glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+                            } else {
+                                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+                            }
+                        }
+                        break;
+
                 }
             }
         });
@@ -119,12 +131,13 @@ public class Renderer {
                 if (w > 0 && h > 0 && (w != width || h != height)) {
                     width = w;
                     height = h;
-                    proj = new Mat4PerspRH(Math.PI / 4, height / (double) width, 0.01, 1000.0);
+                    proj = new Mat4PerspRH(Math.PI / 4, height / (double) width, 0.01, 3000.0); // Update the far plane here as well
                     if (textRenderer != null)
                         textRenderer.resize(width, height);
                 }
             }
         });
+
 
         try (MemoryStack stack = stackPush()) {
             IntBuffer pWidth = stack.mallocInt(1);
@@ -154,6 +167,16 @@ public class Renderer {
             glViewport(0, 0, width, height);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+            // Use the shader program
+            glUseProgram(shaderProgram);
+
+            // Set wireframe or fill mode based on the current state
+            if (wireframe) {
+                glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+            } else {
+                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+            }
+
             // Update camera matrices
             glUniformMatrix4fv(locMat, false, ToFloatArray.convert(cam.getViewMatrix().mul(proj)));
 
@@ -170,7 +193,6 @@ public class Renderer {
                     Chunk chunk = chunkManager.getChunk(chunkX, chunkY);
                     if (chunk != null) {
                         // Render the chunk
-                        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
                         chunk.getBuffers().draw(GL_TRIANGLES, shaderProgram);
                     }
                 }
@@ -185,6 +207,7 @@ public class Renderer {
             glfwPollEvents();
         }
     }
+
 
 
 
