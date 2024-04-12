@@ -3,6 +3,7 @@ package model;
 import chunks.Chunk;
 import chunks.ChunkManager;
 
+import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 
 import imgui.ImGui;
@@ -29,6 +30,7 @@ import transforms.Vec3D;
 import javax.swing.*;
 import java.nio.DoubleBuffer;
 import java.nio.IntBuffer;
+import java.util.Optional;
 
 import static org.lwjgl.glfw.Callbacks.*;
 import static org.lwjgl.glfw.GLFW.*;
@@ -41,13 +43,13 @@ public class Renderer {
     int terrainSize = 128;
     float terrainScale = 20f;
     int width = 800, height = 600;
-    private boolean wireframe = false;
+    private boolean wireframe = true;
     double ox, oy;
     private boolean mouseButton1 = false;
     private long window;
     private ChunkManager chunkManager;
     OGLTextRenderer textRenderer;
-    int shaderProgram, locMat;
+    int shaderProgram, locMat, locNormalMat, locLightDir;
     ImInt inputInt = new ImInt(0); // You can set this to a default seed if needed
     ImString inputText = new ImString("100",50); // Initialize with "100" as a default seed
     private int selectedMode = 0;
@@ -171,10 +173,16 @@ public class Renderer {
         GL.createCapabilities();
         glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
 
-        // Initialize shader program, text renderer, and chunk manager
+        // Enable depth test
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL); // Set the type of depth test
         shaderProgram = ShaderUtils.loadProgram("/shader");
         glUseProgram(shaderProgram);
         locMat = glGetUniformLocation(shaderProgram, "mat");
+        locNormalMat = glGetUniformLocation(shaderProgram, "normalMat");
+        locLightDir = glGetUniformLocation(shaderProgram, "lightDir");
+
+
         cam = cam.withPosition(new Vec3D(0, 0, 50)).withAzimuth(0).withZenith(0);
         textRenderer = new OGLTextRenderer(width, height);
         chunkManager = new ChunkManager(terrainSize, terrainScale);
