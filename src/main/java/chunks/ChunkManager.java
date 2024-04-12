@@ -13,11 +13,11 @@ public class ChunkManager {
     public ChunkManager(int terrainSize, float terrainScale) {
         this.terrainSize = terrainSize;
         this.terrainScale = terrainScale;
-        this.perlinNoise = new PerlinNoise(); // Assume PerlinNoise is correctly set up for global use
+        this.perlinNoise = new PerlinNoise();
     }
 
     public void generateChunk(int chunkX, int chunkY) {
-        String key = getKey(chunkX, chunkY); // Use static method directly
+        String key = getKey(chunkX, chunkY);
         chunks.computeIfAbsent(key, k -> new Chunk(chunkX, chunkY, terrainSize, terrainScale, perlinNoise));
     }
 

@@ -4,6 +4,16 @@ import chunks.Chunk;
 import chunks.ChunkManager;
 
 import java.nio.FloatBuffer;
+
+import imgui.ImGui;
+import imgui.ImGuiIO;
+import imgui.flag.ImGuiCond;
+import imgui.flag.ImGuiInputTextFlags;
+import imgui.flag.ImGuiWindowFlags;
+import imgui.gl3.ImGuiImplGl3;
+import imgui.glfw.ImGuiImplGlfw;
+import imgui.type.ImInt;
+import imgui.type.ImString;
 import lwjglutils.OGLTextRenderer;
 import lwjglutils.ShaderUtils;
 import lwjglutils.ToFloatArray;
@@ -28,7 +38,7 @@ import static org.lwjgl.system.MemoryStack.*;
 import static org.lwjgl.system.MemoryUtil.*;
 
 public class Renderer {
-    int terrainSize = 126;
+    int terrainSize = 128;
     float terrainScale = 20f;
     int width = 800, height = 600;
     private boolean wireframe = false;
@@ -38,8 +48,11 @@ public class Renderer {
     private ChunkManager chunkManager;
     OGLTextRenderer textRenderer;
     int shaderProgram, locMat;
+    ImInt inputInt = new ImInt(0); // You can set this to a default seed if needed
+    ImString inputText = new ImString("100",50); // Initialize with "100" as a default seed
     private int selectedMode = 0;
-
+    private final ImGuiImplGlfw imGuiGlfw = new ImGuiImplGlfw();
+    private final ImGuiImplGl3 imGuiGl3 = new ImGuiImplGl3();
     Camera cam = new Camera();
     Mat4 proj = new Mat4PerspRH(Math.PI / 4, 1, 0.01, 3000.0);
 
@@ -166,100 +179,111 @@ public class Renderer {
         textRenderer = new OGLTextRenderer(width, height);
         chunkManager = new ChunkManager(terrainSize, terrainScale);
 
-        createControlFrame();
+        initImGui();
         initDiamondSquare();
     }
 
-    public void createControlFrame() {
-        // Swing utilities should be invoked on the Event Dispatch Thread
-        SwingUtilities.invokeLater(() -> {
-            JFrame controlFrame = new JFrame("Control Panel");
-            JPanel panel = new JPanel();
-
-            JRadioButton buttonOne = new JRadioButton("One");
-            buttonOne.addActionListener(e -> selectedMode = 0);
-            buttonOne.setSelected(true);
-
-            JRadioButton buttonTwo = new JRadioButton("Two");
-            buttonTwo.addActionListener(e -> selectedMode = 1);
-
-            JRadioButton buttonThree = new JRadioButton("Three");
-            buttonThree.addActionListener(e -> selectedMode = 2);
-
-            // Group the radio buttons.
-            ButtonGroup group = new ButtonGroup();
-            group.add(buttonOne);
-            group.add(buttonTwo);
-            group.add(buttonThree);
-
-            // Add buttons to the panel.
-            panel.add(buttonOne);
-            panel.add(buttonTwo);
-            panel.add(buttonThree);
-
-            controlFrame.add(panel);
-            controlFrame.pack();
-            controlFrame.setVisible(true);
-            controlFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        });
+    private void initImGui() {
+        ImGui.createContext();
+        ImGuiIO io = ImGui.getIO();
+        imGuiGlfw.init(window, true);
+        imGuiGl3.init("#version 330");
     }
 
     private void loop() {
         while (!glfwWindowShouldClose(window)) {
+            glfwPollEvents();
+            imGuiGlfw.newFrame();
+            ImGui.newFrame();
+
+            drawImGui();
+
+            ImGui.render();
             glViewport(0, 0, width, height);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-            glUseProgram(shaderProgram);
-
-            if (wireframe) {
-                glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-            } else {
-                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-            }
-            glUniformMatrix4fv(locMat, false, ToFloatArray.convert(cam.getViewMatrix().mul(proj)));
-
-            switch (selectedMode) {
-                case 0:
-
-                    // Calculate the current central chunk based on the camera's X and Y position
-                    int currentCentralChunkX = (int) Math.floor(cam.getPosition().getX() / (terrainSize * terrainScale));
-                    int currentCentralChunkY = (int) Math.floor(cam.getPosition().getY() / (terrainSize * terrainScale));
-
-                    // Generate and render the 7x7 grid around the current central chunk along X and Y axes
-                    for (int dy = -3; dy <= 3; dy++) {
-                        for (int dx = -3; dx <= 3; dx++) {
-                            int chunkX = currentCentralChunkX + dx;
-                            int chunkY = currentCentralChunkY + dy;
-                            chunkManager.generateChunk(chunkX, chunkY);
-                            Chunk chunk = chunkManager.getChunk(chunkX, chunkY);
-                            if (chunk != null) {
-                                // Render the chunk
-                                chunk.getBuffers().draw(GL_TRIANGLES, shaderProgram);
-                            }
-                        }
-                    }
-
-                    textRenderer.clear();
-                    textRenderer.addStr2D(20, 20, String.format("Camera Position: X=%.2f, Y=%.2f", cam.getPosition().getX(), cam.getPosition().getY()));
-                    textRenderer.draw();
-                    break;
-                case 1:
-                    renderDiamondSquare();
-
-                    textRenderer.clear();
-                    textRenderer.addStr2D(20, 20, String.format("Camera Position: X=%.2f, Y=%.2f", cam.getPosition().getX(), cam.getPosition().getY()));
-                    textRenderer.draw();
-                    break;
-                case 2:
-                    break;
-            }
-
+            renderScene();
+            imGuiGl3.renderDrawData(ImGui.getDrawData());
 
             glfwSwapBuffers(window);
-            glfwPollEvents();
         }
     }
 
+    private void drawImGui() {
+        ImGuiIO io = ImGui.getIO();
+        float windowPosX = io.getDisplaySizeX() - 200;
+        float windowPosY = 0;
+
+        ImGui.setNextWindowPos(windowPosX, windowPosY, ImGuiCond.Always);
+        ImGui.setNextWindowSize(200, 150, ImGuiCond.Once);
+
+        if (ImGui.begin("Control Panel", ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoCollapse)) {
+            if (ImGui.radioButton("Perlin", selectedMode == 0)) selectedMode = 0;
+            if (ImGui.radioButton("Diamond-Square", selectedMode == 1)) selectedMode = 1;
+
+            ImGui.inputText("Seed", inputText, ImGuiInputTextFlags.None);
+
+            if (ImGui.button("Set")) {
+                try {
+                    int newValue = Integer.parseInt(inputText.get());
+                    inputInt.set(newValue);
+                    System.out.println("Set clicked, new value: " + newValue);
+                } catch (NumberFormatException e) {
+                    System.out.println("Error parsing integer: " + inputText.get());
+                }
+            }
+
+            ImGui.text("Current Seed: " + inputInt.get());
+
+            ImGui.end();
+        }
+    }
+
+    private void renderScene() {
+        glUseProgram(shaderProgram);
+
+        if (wireframe) {
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        } else {
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        }
+
+        glUniformMatrix4fv(locMat, false, ToFloatArray.convert(cam.getViewMatrix().mul(proj)));
+
+        switch (selectedMode) {
+            case 0:
+                renderChunks();
+                break;
+            case 1:
+                renderDiamondSquare();
+                break;
+        }
+
+        // Update and draw text renderer
+        textRenderer.clear();
+        textRenderer.addStr2D(20, 20, String.format("Camera Position: X=%.2f, Y=%.2f", cam.getPosition().getX(), cam.getPosition().getY()));
+        textRenderer.draw();
+    }
+
+    private void renderChunks() {
+        // Calculate the current central chunk based on the camera's X and Y position
+        int currentCentralChunkX = (int) Math.floor(cam.getPosition().getX() / (terrainSize * terrainScale));
+        int currentCentralChunkY = (int) Math.floor(cam.getPosition().getY() / (terrainSize * terrainScale));
+
+        // Generate and render grid around the current central chunk along X and Y axes
+        for (int dy = -3; dy <= 3; dy++) {
+            for (int dx = -3; dx <= 3; dx++) {
+                int chunkX = currentCentralChunkX + dx;
+                int chunkY = currentCentralChunkY + dy;
+                chunkManager.generateChunk(chunkX, chunkY);
+                Chunk chunk = chunkManager.getChunk(chunkX, chunkY);
+                if (chunk != null) {
+                    // Render the chunk
+                    chunk.getBuffers().draw(GL_TRIANGLES, shaderProgram);
+                }
+            }
+        }
+    }
     // Declare a DiamondSquare instance and a VAO + VBO for rendering it
     private DiamondSquare diamondSquare;
     private int dsVaoId;
@@ -326,11 +350,6 @@ public class Renderer {
         glBindVertexArray(0);
     }
 
-
-
-
-
-
     public void run() {
         try {
             init();
@@ -338,11 +357,18 @@ public class Renderer {
         } catch (Throwable t) {
             t.printStackTrace();
         } finally {
-            glfwFreeCallbacks(window);
-            glfwDestroyWindow(window);
-            glDeleteProgram(shaderProgram);
-            glfwTerminate();
-            glfwSetErrorCallback(null).free();
+            cleanup();
         }
+    }
+
+    private void cleanup() {
+        imGuiGl3.dispose();
+        imGuiGlfw.dispose();
+        ImGui.destroyContext();
+
+        glfwFreeCallbacks(window);
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        glfwSetErrorCallback(null).free();
     }
 }
