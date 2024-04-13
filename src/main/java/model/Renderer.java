@@ -3,7 +3,6 @@ package model;
 import chunks.Chunk;
 import chunks.ChunkManager;
 
-import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 
 import imgui.ImGui;
@@ -13,6 +12,7 @@ import imgui.flag.ImGuiInputTextFlags;
 import imgui.flag.ImGuiWindowFlags;
 import imgui.gl3.ImGuiImplGl3;
 import imgui.glfw.ImGuiImplGlfw;
+import imgui.type.ImFloat;
 import imgui.type.ImInt;
 import imgui.type.ImString;
 import lwjglutils.OGLTextRenderer;
@@ -27,10 +27,8 @@ import transforms.Mat4;
 import transforms.Mat4PerspRH;
 import transforms.Vec3D;
 
-import javax.swing.*;
 import java.nio.DoubleBuffer;
 import java.nio.IntBuffer;
-import java.util.Optional;
 
 import static org.lwjgl.glfw.Callbacks.*;
 import static org.lwjgl.glfw.GLFW.*;
@@ -40,10 +38,11 @@ import static org.lwjgl.system.MemoryStack.*;
 import static org.lwjgl.system.MemoryUtil.*;
 
 public class Renderer {
+    int seed = 333;
     int terrainSize = 128;
-    float terrainScale = 20f;
+    float terrainScale = 2f;
     int width = 800, height = 600;
-    private boolean wireframe = true;
+    private boolean wireframe = false;
     double ox, oy;
     private boolean mouseButton1 = false;
     private long window;
@@ -51,7 +50,7 @@ public class Renderer {
     OGLTextRenderer textRenderer;
     int shaderProgram, locMat, locNormalMat, locLightDir;
     ImInt inputInt = new ImInt(0); // You can set this to a default seed if needed
-    ImString inputText = new ImString("100",50); // Initialize with "100" as a default seed
+    ImString inputText = new ImString(50); // Initialize with "100" as a default seed
     private int selectedMode = 0;
     private final ImGuiImplGlfw imGuiGlfw = new ImGuiImplGlfw();
     private final ImGuiImplGl3 imGuiGl3 = new ImGuiImplGl3();
@@ -65,7 +64,7 @@ public class Renderer {
         glfwDefaultWindowHints();
         glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-        window = glfwCreateWindow(width, height, "Hello World!", NULL, NULL);
+        window = glfwCreateWindow(width, height, "Procedural generation", NULL, NULL);
         if (window == NULL)
             throw new RuntimeException("Failed to create the GLFW window");
         glfwSetKeyCallback(window, (window, key, scancode, action, mods) -> {
@@ -185,7 +184,7 @@ public class Renderer {
 
         cam = cam.withPosition(new Vec3D(0, 0, 50)).withAzimuth(0).withZenith(0);
         textRenderer = new OGLTextRenderer(width, height);
-        chunkManager = new ChunkManager(terrainSize, terrainScale);
+        chunkManager = new ChunkManager(terrainSize, terrainScale, seed);
 
         initImGui();
         initDiamondSquare();
@@ -223,29 +222,53 @@ public class Renderer {
         float windowPosY = 0;
 
         ImGui.setNextWindowPos(windowPosX, windowPosY, ImGuiCond.Always);
-        ImGui.setNextWindowSize(200, 150, ImGuiCond.Once);
+        ImGui.setNextWindowSize(200, 170, ImGuiCond.Once);
 
         if (ImGui.begin("Control Panel", ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoCollapse)) {
             if (ImGui.radioButton("Perlin", selectedMode == 0)) selectedMode = 0;
             if (ImGui.radioButton("Diamond-Square", selectedMode == 1)) selectedMode = 1;
 
-            ImGui.inputText("Seed", inputText, ImGuiInputTextFlags.None);
+            // Show the following UI elements only if 'Perlin' is selected
+            if (selectedMode == 0) {
+                // Input field for seed with numeric only restriction
+                ImGui.inputInt("Seed", inputInt, 0, 0, ImGuiInputTextFlags.CharsDecimal);
 
-            if (ImGui.button("Set")) {
-                try {
-                    int newValue = Integer.parseInt(inputText.get());
-                    inputInt.set(newValue);
-                    System.out.println("Set clicked, new value: " + newValue);
-                } catch (NumberFormatException e) {
-                    System.out.println("Error parsing integer: " + inputText.get());
+                // "Set" button to apply the seed change
+                if (ImGui.button("Set")) {
+                    int newSeed = inputInt.get();
+                    if (newSeed != seed) {
+                        seed = newSeed;
+                        chunkManager.setSeed(seed); // Update the seed in Chunk Manager
+                        chunkManager.regenerateTerrain(); // Regenerate the terrain
+                        System.out.println("Set clicked, new value: " + seed);
+                    }
+                }
+
+                ImGui.text("Current Seed: " + seed);
+
+                // Terrain scale adjustment using ImFloat
+                ImFloat terrainScaleRef = new ImFloat(chunkManager.getTerrainScale());
+                if (ImGui.inputFloat("Scale", terrainScaleRef, 0.1f, 1.0f, "%.2f")) {
+                    float newScale = terrainScaleRef.get();
+                    if (newScale < 0.3f) {
+                        newScale = 0.3f; // Set to minimum value if below 0.3
+                        terrainScaleRef.set(newScale); // Optionally reset the ImGui display to show this minimum
+                    }
+                    if (newScale > 100f){
+                        newScale = 100f;
+                        terrainScaleRef.set(newScale);
+                    }
+                    chunkManager.setTerrainScale(newScale); // Update the scale in Chunk Manager
+                    chunkManager.regenerateTerrain(); // Optional: Regenerate the terrain if you want instant visual feedback
                 }
             }
-
-            ImGui.text("Current Seed: " + inputInt.get());
 
             ImGui.end();
         }
     }
+
+
+
 
     private void renderScene() {
         glUseProgram(shaderProgram);
@@ -274,13 +297,14 @@ public class Renderer {
     }
 
     private void renderChunks() {
+        int numberOfChunks = 6;
         // Calculate the current central chunk based on the camera's X and Y position
         int currentCentralChunkX = (int) Math.floor(cam.getPosition().getX() / (terrainSize * terrainScale));
         int currentCentralChunkY = (int) Math.floor(cam.getPosition().getY() / (terrainSize * terrainScale));
 
         // Generate and render grid around the current central chunk along X and Y axes
-        for (int dy = -3; dy <= 3; dy++) {
-            for (int dx = -3; dx <= 3; dx++) {
+        for (int dy = -numberOfChunks; dy <= numberOfChunks; dy++) {
+            for (int dx = -numberOfChunks; dx <= numberOfChunks; dx++) {
                 int chunkX = currentCentralChunkX + dx;
                 int chunkY = currentCentralChunkY + dy;
                 chunkManager.generateChunk(chunkX, chunkY);

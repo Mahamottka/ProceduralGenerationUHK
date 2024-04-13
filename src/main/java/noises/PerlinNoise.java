@@ -5,10 +5,10 @@ import utils.FastNoiseLite;
 public class PerlinNoise {
     private FastNoiseLite noise;
 
-    public PerlinNoise() {
+    public PerlinNoise(int seed) {
         noise = new FastNoiseLite();
+        noise.SetSeed(seed);
         noise.SetNoiseType(FastNoiseLite.NoiseType.Perlin);
-        // Consider setting other properties or exposing them through the constructor
     }
 
     public float getNoise(float x, float y) {

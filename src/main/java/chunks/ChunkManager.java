@@ -6,14 +6,48 @@ import noises.PerlinNoise;
 
 public class ChunkManager {
     private final int terrainSize;
-    private final float terrainScale;
-    private final Map<String, Chunk> chunks = new ConcurrentHashMap<>();
-    private final PerlinNoise perlinNoise;
+    private float terrainScale;  // Not final anymore, to allow changes
+    private Map<String, Chunk> chunks = new ConcurrentHashMap<>();
+    private PerlinNoise perlinNoise;
+    private int seed;
 
-    public ChunkManager(int terrainSize, float terrainScale) {
+    public ChunkManager(int terrainSize, float terrainScale, int seed) {
         this.terrainSize = terrainSize;
         this.terrainScale = terrainScale;
-        this.perlinNoise = new PerlinNoise();
+        initializePerlinNoise(seed);
+    }
+
+    private void initializePerlinNoise(int newSeed) {
+        this.seed = newSeed;
+        this.perlinNoise = new PerlinNoise(seed);
+        this.chunks.clear(); // Clear existing chunks
+    }
+
+    public void regenerateTerrain() {
+        initializePerlinNoise(this.seed);
+        for (String key : chunks.keySet()) {
+            String[] parts = key.split("_");
+            int chunkX = Integer.parseInt(parts[0]);
+            int chunkY = Integer.parseInt(parts[1]);
+            chunks.put(key, new Chunk(chunkX, chunkY, terrainSize, terrainScale, perlinNoise)); // Recreate chunks with new scale
+        }
+    }
+
+    public void setSeed(int newSeed) {
+        if (this.seed != newSeed) {
+            initializePerlinNoise(newSeed);
+        }
+    }
+
+    public void setTerrainScale(float newScale) {
+        if (this.terrainScale != newScale) {
+            this.terrainScale = newScale;
+            regenerateTerrain(); // Regenerate all chunks to apply the new scale
+        }
+    }
+
+    public float getTerrainScale() {
+        return this.terrainScale;
     }
 
     public void generateChunk(int chunkX, int chunkY) {
@@ -26,8 +60,6 @@ public class ChunkManager {
     }
 
     public static String getKey(int chunkX, int chunkY) {
-        // This method generates a unique key for each chunk based on its coordinates.
-        // It's crucial for identifying and retrieving specific chunks from the collection.
         return chunkX + "_" + chunkY;
     }
 }
