@@ -12,6 +12,7 @@ import imgui.flag.ImGuiInputTextFlags;
 import imgui.flag.ImGuiWindowFlags;
 import imgui.gl3.ImGuiImplGl3;
 import imgui.glfw.ImGuiImplGlfw;
+import imgui.type.ImBoolean;
 import imgui.type.ImFloat;
 import imgui.type.ImInt;
 import imgui.type.ImString;
@@ -43,6 +44,11 @@ public class Renderer {
     float terrainScale = 2f;
     int width = 800, height = 600;
     private boolean wireframe = false;
+    private DiamondSquare diamondSquare;
+    int iterations = 7;
+    float roughness = 0.6f;
+    private float[] cornerValues;
+    private ImBoolean useRandomness;
     double ox, oy;
     private boolean mouseButton1 = false;
     private long window;
@@ -91,8 +97,8 @@ public class Renderer {
                         cam = cam.up(5);
                         break;
                     case GLFW_KEY_P:
-                        if (action == GLFW_PRESS) { // Only toggle on key press, not repeat
-                            wireframe = !wireframe; // Toggle the wireframe boolean
+                        if (action == GLFW_PRESS) {
+                            wireframe = !wireframe;
                             if (wireframe) {
                                 glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
                             } else {
@@ -172,9 +178,8 @@ public class Renderer {
         GL.createCapabilities();
         glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
 
-        // Enable depth test
         glEnable(GL_DEPTH_TEST);
-        glDepthFunc(GL_LEQUAL); // Set the type of depth test
+        glDepthFunc(GL_LEQUAL);
         shaderProgram = ShaderUtils.loadProgram("/shader");
         glUseProgram(shaderProgram);
         locMat = glGetUniformLocation(shaderProgram, "mat");
@@ -185,9 +190,12 @@ public class Renderer {
         cam = cam.withPosition(new Vec3D(0, 0, 50)).withAzimuth(0).withZenith(0);
         textRenderer = new OGLTextRenderer(width, height);
         chunkManager = new ChunkManager(terrainSize, terrainScale, seed);
-
+        cornerValues = new float[4];
+        useRandomness = new ImBoolean(false);
         initImGui();
-        initDiamondSquare();
+
+        diamondSquare = new DiamondSquare(iterations, roughness, 10.0f, 1.0f, 20.0f, 5.0f, false);
+        initDiamondSquareBuffers();
     }
 
     private void initImGui() {
@@ -228,18 +236,15 @@ public class Renderer {
             if (ImGui.radioButton("Perlin", selectedMode == 0)) selectedMode = 0;
             if (ImGui.radioButton("Diamond-Square", selectedMode == 1)) selectedMode = 1;
 
-            // Show the following UI elements only if 'Perlin' is selected
             if (selectedMode == 0) {
-                // Input field for seed with numeric only restriction
                 ImGui.inputInt("Seed", inputInt, 0, 0, ImGuiInputTextFlags.CharsDecimal);
 
-                // "Set" button to apply the seed change
                 if (ImGui.button("Set")) {
                     int newSeed = inputInt.get();
                     if (newSeed != seed) {
                         seed = newSeed;
-                        chunkManager.setSeed(seed); // Update the seed in Chunk Manager
-                        chunkManager.regenerateTerrain(); // Regenerate the terrain
+                        chunkManager.setSeed(seed);
+                        chunkManager.regenerateTerrain();
                         System.out.println("Set clicked, new value: " + seed);
                     }
                 }
@@ -251,16 +256,27 @@ public class Renderer {
                 if (ImGui.inputFloat("Scale", terrainScaleRef, 0.1f, 1.0f, "%.2f")) {
                     float newScale = terrainScaleRef.get();
                     if (newScale < 0.3f) {
-                        newScale = 0.3f; // Set to minimum value if below 0.3
-                        terrainScaleRef.set(newScale); // Optionally reset the ImGui display to show this minimum
+                        newScale = 0.3f;
+                        terrainScaleRef.set(newScale);
                     }
                     if (newScale > 100f){
                         newScale = 100f;
                         terrainScaleRef.set(newScale);
                     }
-                    chunkManager.setTerrainScale(newScale); // Update the scale in Chunk Manager
-                    chunkManager.regenerateTerrain(); // Optional: Regenerate the terrain if you want instant visual feedback
+                    chunkManager.setTerrainScale(newScale);
+                    chunkManager.regenerateTerrain();
                 }
+            }
+
+            if (selectedMode == 1) {
+                ImGui.checkbox("Use Randomness", useRandomness);
+
+                ImGui.inputFloat4("Corner Values", cornerValues);
+
+                if (ImGui.button("Regenerate")) {
+                    updateDiamondTerrain(diamondSquare.getIterations(), diamondSquare.getRoughness(), cornerValues[0], cornerValues[1], cornerValues[2], cornerValues[3], useRandomness.get());
+                }
+
             }
 
             ImGui.end();
@@ -290,7 +306,6 @@ public class Renderer {
                 break;
         }
 
-        // Update and draw text renderer
         textRenderer.clear();
         textRenderer.addStr2D(20, 20, String.format("Camera Position: X=%.2f, Y=%.2f", cam.getPosition().getX(), cam.getPosition().getY()));
         textRenderer.draw();
@@ -316,43 +331,25 @@ public class Renderer {
             }
         }
     }
-    // Declare a DiamondSquare instance and a VAO + VBO for rendering it
-    private DiamondSquare diamondSquare;
     private int dsVaoId;
     private int dsVboId;
 
-    private void initDiamondSquare() {
-        int iterations = 7; // 129x129 grid
-        float roughness = 0.6f;
-        diamondSquare = new DiamondSquare(iterations, roughness);
-        diamondSquare.generate();
-
+    private void initDiamondSquareBuffers() {
         dsVaoId = glGenVertexArrays();
         dsVboId = glGenBuffers();
         glBindVertexArray(dsVaoId);
-
-        // Convert the height map to a vertex buffer (assuming x, y, z positions for simplicity)
-        float[] vertices = new float[(terrainSize + 1) * (terrainSize + 1) * 3];
-        int index = 0;
-        for (int i = 0; i <= terrainSize; i++) {
-            for (int j = 0; j <= terrainSize; j++) {
-                vertices[index++] = i * terrainScale; // x
-                vertices[index++] = j * terrainScale; // y
-                vertices[index++] = diamondSquare.getHeightMap()[i][j] * terrainScale; // z (height)
-            }
-        }
-
-        // Upload vertex data
-        FloatBuffer verticesBuffer = BufferUtils.createFloatBuffer(vertices.length);
-        verticesBuffer.put(vertices).flip();
-
         glBindBuffer(GL_ARRAY_BUFFER, dsVboId);
-        glBufferData(GL_ARRAY_BUFFER, verticesBuffer, GL_STATIC_DRAW);
+
+        int maxTerrainSize = (1 << 10) + 1; // for example, up to 1024x1024 grid
+        FloatBuffer verticesBuffer = BufferUtils.createFloatBuffer(maxTerrainSize * maxTerrainSize * 3);
+        glBufferData(GL_ARRAY_BUFFER, verticesBuffer.capacity() * Float.BYTES, GL_DYNAMIC_DRAW);
+
         glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
         glEnableVertexAttribArray(0);
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindVertexArray(0);
     }
+
 
     private void renderDiamondSquare() {
         glBindVertexArray(dsVaoId);
@@ -381,6 +378,35 @@ public class Renderer {
 
         glBindVertexArray(0);
     }
+
+    private void updateDiamondTerrain(int iterations, float roughness, float firstValue, float secondValue, float thirdValue, float fourthValue, boolean useRandomness) {
+        diamondSquare = new DiamondSquare(iterations, roughness, firstValue, secondValue, thirdValue, fourthValue, useRandomness);
+        diamondSquare.generate();
+        refreshTerrainBuffer();
+    }
+
+    private void refreshTerrainBuffer() {
+        int terrainSize = (1 << diamondSquare.getIterations()) + 1;
+        float[] vertices = new float[terrainSize * terrainSize * 3];
+        int index = 0;
+        for (int i = 0; i < terrainSize; i++) {
+            for (int j = 0; j < terrainSize; j++) {
+                vertices[index++] = i; // x
+                vertices[index++] = j; // y
+                vertices[index++] = diamondSquare.getHeightMap()[i][j]; // z
+            }
+        }
+
+        glBindVertexArray(dsVaoId);
+        glBindBuffer(GL_ARRAY_BUFFER, dsVboId);
+        FloatBuffer verticesBuffer = BufferUtils.createFloatBuffer(vertices.length);
+        verticesBuffer.put(vertices).flip();
+        glBufferSubData(GL_ARRAY_BUFFER, 0, verticesBuffer);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glBindVertexArray(0);
+    }
+
+
 
     public void run() {
         try {
