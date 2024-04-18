@@ -18,7 +18,7 @@ public class DiamondSquare {
         setSize((1 << iterations) + 1);
     }
 
-    private void setSize(int newSize) {
+    public void setSize(int newSize) {
         this.size = newSize;
         this.heightMap = new float[size][size];
         initializeCorners();

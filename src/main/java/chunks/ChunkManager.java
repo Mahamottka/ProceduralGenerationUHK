@@ -5,7 +5,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import noises.PerlinNoise;
 
 public class ChunkManager {
-    private final int terrainSize;
+    private int terrainSize;
     private float terrainScale;  // Not final anymore, to allow changes
     private Map<String, Chunk> chunks = new ConcurrentHashMap<>();
     private PerlinNoise perlinNoise;
@@ -15,6 +15,10 @@ public class ChunkManager {
         this.terrainSize = terrainSize;
         this.terrainScale = terrainScale;
         initializePerlinNoise(seed);
+    }
+
+    public void setSize(int size){
+        this.terrainSize = size;
     }
 
     private void initializePerlinNoise(int newSeed) {
@@ -29,7 +33,7 @@ public class ChunkManager {
             String[] parts = key.split("_");
             int chunkX = Integer.parseInt(parts[0]);
             int chunkY = Integer.parseInt(parts[1]);
-            chunks.put(key, new Chunk(chunkX, chunkY, terrainSize, terrainScale, perlinNoise)); // Recreate chunks with new scale
+            chunks.put(key, new Chunk(chunkX, chunkY, terrainSize, terrainScale, perlinNoise, false)); // Recreate chunks with new scale
         }
     }
 
@@ -50,9 +54,9 @@ public class ChunkManager {
         return this.terrainScale;
     }
 
-    public void generateChunk(int chunkX, int chunkY) {
+    public void generateChunk(int chunkX, int chunkY, boolean skip) {
         String key = getKey(chunkX, chunkY);
-        chunks.computeIfAbsent(key, k -> new Chunk(chunkX, chunkY, terrainSize, terrainScale, perlinNoise));
+        chunks.computeIfAbsent(key, k -> new Chunk(chunkX, chunkY, terrainSize, terrainScale, perlinNoise, skip));
     }
 
     public Chunk getChunk(int chunkX, int chunkY) {

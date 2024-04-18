@@ -11,16 +11,16 @@ public class Chunk {
     private OGLBuffers buffers;
     private PerlinNoise perlinNoise;
 
-    public Chunk(int chunkX, int chunkY, int terrainSize, float terrainScale, PerlinNoise perlinNoise) {
+    public Chunk(int chunkX, int chunkY, int terrainSize, float terrainScale, PerlinNoise perlinNoise, boolean skip) {
         this.chunkX = chunkX;
         this.chunkY = chunkY;
         this.terrainSize = terrainSize;
         this.terrainScale = terrainScale;
         this.perlinNoise = perlinNoise;
-        createTerrain();
+        createTerrain(skip);
     }
 
-    private void createTerrain() {
+    private void createTerrain(boolean skip) {
         int extendedSize = terrainSize + 1; // +1 to ensure we have an edge to stitch with adjacent chunks
         float[] vertices = new float[extendedSize * extendedSize * 3];
         int[] indices = new int[terrainSize * terrainSize * 6];
@@ -61,6 +61,9 @@ public class Chunk {
             }
         }
 
+        if (skip) {
+            return;
+        }
         OGLBuffers.Attrib[] attributes = {
                 new OGLBuffers.Attrib("inPosition", 3)
         };

@@ -54,7 +54,7 @@ public class Renderer {
     private long window;
     private ChunkManager chunkManager;
     OGLTextRenderer textRenderer;
-    int shaderProgram, locMat, locNormalMat, locLightDir;
+    int shaderProgram, locMat, triaMat, locNormalMat, locLightDir;
     ImInt inputInt = new ImInt(0); // You can set this to a default seed if needed
     ImString inputText = new ImString(50); // Initialize with "100" as a default seed
     private int selectedMode = 0;
@@ -62,6 +62,9 @@ public class Renderer {
     private final ImGuiImplGl3 imGuiGl3 = new ImGuiImplGl3();
     Camera cam = new Camera();
     Mat4 proj = new Mat4PerspRH(Math.PI / 4, 1, 0.01, 3000.0);
+    int[] query, result;
+    float[] fps;
+    int fpsIndex;
 
     private void init() {
         GLFWErrorCallback.createPrint(System.err).set();
@@ -183,6 +186,7 @@ public class Renderer {
         shaderProgram = ShaderUtils.loadProgram("/shader");
         glUseProgram(shaderProgram);
         locMat = glGetUniformLocation(shaderProgram, "mat");
+        triaMat = glGetUniformLocation(shaderProgram, "tria");
         locNormalMat = glGetUniformLocation(shaderProgram, "normalMat");
         locLightDir = glGetUniformLocation(shaderProgram, "lightDir");
 
@@ -196,13 +200,18 @@ public class Renderer {
 
         diamondSquare = new DiamondSquare(iterations, roughness, 10.0f, 1.0f, 20.0f, 5.0f, false);
         initDiamondSquareBuffers();
+
+        query = new int[2];
+        result = new int[2];
+        fps = new float[10];
+        fpsIndex = 0;
     }
 
     private void initImGui() {
         ImGui.createContext();
         ImGuiIO io = ImGui.getIO();
         imGuiGlfw.init(window, true);
-        imGuiGl3.init("#version 330");
+        imGuiGl3.init("#version 460");
     }
 
     private void loop() {
@@ -283,10 +292,9 @@ public class Renderer {
         }
     }
 
-
-
-
     private void renderScene() {
+        glGenQueries(query);
+        glBeginQuery(GL_TIME_ELAPSED, query[0]);
         glUseProgram(shaderProgram);
 
         if (wireframe) {
@@ -296,6 +304,7 @@ public class Renderer {
         }
 
         glUniformMatrix4fv(locMat, false, ToFloatArray.convert(cam.getViewMatrix().mul(proj)));
+        glUniform1i(triaMat,(wireframe)?1:0);
 
         switch (selectedMode) {
             case 0:
@@ -306,9 +315,26 @@ public class Renderer {
                 break;
         }
 
+        glEndQuery(GL_TIME_ELAPSED);
+        glGetQueryObjectiv(query[0], GL_QUERY_RESULT, result);
+
+
         textRenderer.clear();
         textRenderer.addStr2D(20, 20, String.format("Camera Position: X=%.2f, Y=%.2f", cam.getPosition().getX(), cam.getPosition().getY()));
+        textRenderer.addStr2D(20, 40, "Pass time: " + String.format("%4.2f ms", result[0]/1e6));
+        textRenderer.addStr2D(20, 60, "Max FPS: " + String.format("%4.2f", fpsBuffer(result[0]/1e6)));
         textRenderer.draw();
+    }
+
+    private float fpsBuffer(double pass){
+        fps[fpsIndex] = (float)(1000./pass);
+        fpsIndex ++;
+        fpsIndex = fpsIndex%10;
+        float t = 0;
+        for (float f:fps) {
+            t+=f;
+        }
+        return t/10;
     }
 
     private void renderChunks() {
@@ -322,7 +348,7 @@ public class Renderer {
             for (int dx = -numberOfChunks; dx <= numberOfChunks; dx++) {
                 int chunkX = currentCentralChunkX + dx;
                 int chunkY = currentCentralChunkY + dy;
-                chunkManager.generateChunk(chunkX, chunkY);
+                chunkManager.generateChunk(chunkX, chunkY, false);
                 Chunk chunk = chunkManager.getChunk(chunkX, chunkY);
                 if (chunk != null) {
                     // Render the chunk
@@ -349,7 +375,6 @@ public class Renderer {
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindVertexArray(0);
     }
-
 
     private void renderDiamondSquare() {
         glBindVertexArray(dsVaoId);
@@ -379,7 +404,7 @@ public class Renderer {
         glBindVertexArray(0);
     }
 
-    private void updateDiamondTerrain(int iterations, float roughness, float firstValue, float secondValue, float thirdValue, float fourthValue, boolean useRandomness) {
+    public void updateDiamondTerrain(int iterations, float roughness, float firstValue, float secondValue, float thirdValue, float fourthValue, boolean useRandomness) {
         diamondSquare = new DiamondSquare(iterations, roughness, firstValue, secondValue, thirdValue, fourthValue, useRandomness);
         diamondSquare.generate();
         refreshTerrainBuffer();
@@ -405,8 +430,6 @@ public class Renderer {
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindVertexArray(0);
     }
-
-
 
     public void run() {
         try {
