@@ -1,4 +1,4 @@
-package model;
+package forTestingPurposes;
 
 import static global.GlutUtils.glutSolidSphere;
 import static org.lwjgl.opengl.GL11.*;
